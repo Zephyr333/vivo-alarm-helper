@@ -38,8 +38,8 @@ public final class ShiftActivity extends Activity {
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setBackgroundColor(Ui.COLOR_BACKGROUND);
-        page.addView(Ui.toolbar(this, "轮班制工作日", "取消", view -> finish(),
-                "完成", view -> finishWithResult()));
+        page.addView(Ui.toolbar(this, "轮班制工作日", "‹",
+                view -> finishWithResult(), "", null));
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
@@ -47,11 +47,11 @@ public final class ShiftActivity extends Activity {
         root.setPadding(0, Ui.dp(this, 8), 0, Ui.dp(this, 36));
 
         LinearLayout cycle = Ui.card(this);
-        cycle.addView(Ui.row(this, "调整周期",
+        cycle.addView(Ui.navigationRow(this, "调整周期",
                 alarm.shiftDaysCount + " 天（范围 2～62 天）", true,
                 view -> editCycleLength()));
         cycle.addView(Ui.divider(this));
-        cycle.addView(Ui.row(this, "今天",
+        cycle.addView(Ui.navigationRow(this, "今天",
                 "周期第 " + alarm.shiftToday + " 天", true,
                 view -> editToday()));
         cycle.addView(Ui.divider(this));
@@ -85,69 +85,37 @@ public final class ShiftActivity extends Activity {
         }
         root.addView(days, Ui.pageCardParams(this));
 
-        TextView evidence = Ui.text(this,
-                "保存编码：shift_today、shift_days_count、shift_days_time、shift_days_enabled。",
-                12, Ui.COLOR_SUBTEXT);
-        evidence.setPadding(Ui.dp(this, 22), 0, Ui.dp(this, 22), 0);
-        root.addView(evidence);
-
         scroll.addView(root);
         page.addView(scroll, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
-        setContentView(page);
+        Ui.setContentView(this, page);
     }
 
     private void editCycleLength() {
-        editInteger("调整周期", "周期长度（2～62 天）",
-                alarm.shiftDaysCount, 2, 62, value -> {
+        VivoDialogs.showNumber(this, "调整周期", alarm.shiftDaysCount,
+                2, 62, " 天", value -> {
                     alarm = alarm.buildUpon().shiftDaysCount(value).build();
                     render();
                 });
     }
 
     private void editToday() {
-        editInteger("今天", "今天是周期第几天（1～"
-                        + alarm.shiftDaysCount + "）",
-                alarm.shiftToday, 1, alarm.shiftDaysCount, value -> {
+        VivoDialogs.showNumber(this, "今天是周期第几天", alarm.shiftToday,
+                1, alarm.shiftDaysCount, " 天", value -> {
                     alarm = alarm.buildUpon().shiftToday(value).build();
                     render();
                 });
     }
 
-    private void editInteger(String title, String message, int current,
-            int min, int max, IntCallback callback) {
-        EditText input = new EditText(this);
-        input.setInputType(InputType.TYPE_CLASS_NUMBER);
-        input.setText(String.valueOf(current));
-        input.setSelectAllOnFocus(true);
-        input.setPadding(Ui.dp(this, 24), 0, Ui.dp(this, 24), 0);
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(title).setMessage(message).setView(input)
-                .setNegativeButton("取消", null)
-                .setPositiveButton("确定", null).create();
-        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-                .setOnClickListener(view -> {
-                    try {
-                        int value = Integer.parseInt(input.getText().toString());
-                        if (value < min || value > max) throw new NumberFormatException();
-                        callback.accept(value);
-                        dialog.dismiss();
-                    } catch (NumberFormatException exception) {
-                        input.setError("请输入 " + min + "～" + max);
-                    }
-                }));
-        dialog.show();
-    }
-
     private void editDayTime(int position) {
         AlarmConfig.ShiftDay day = alarm.shiftDays.get(position);
-        new TimePickerDialog(this, (view, hour, minute) -> {
+        VivoDialogs.showClock(this, day.hour, day.minute, (hour, minute) -> {
             List<AlarmConfig.ShiftDay> values = new ArrayList<>(alarm.shiftDays);
             values.set(position, new AlarmConfig.ShiftDay(
                     hour, minute, values.get(position).enabled));
             alarm = alarm.buildUpon().shiftDays(values).build();
             render();
-        }, day.hour, day.minute, true).show();
+        });
     }
 
     private void updateEnabled(int position, boolean checked) {
@@ -183,5 +151,9 @@ public final class ShiftActivity extends Activity {
         finish();
     }
 
-    private interface IntCallback { void accept(int value); }
+    @Override
+    public void onBackPressed() {
+        finishWithResult();
+    }
+
 }

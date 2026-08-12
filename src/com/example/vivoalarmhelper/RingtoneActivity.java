@@ -25,6 +25,7 @@ import java.io.File;
 public final class RingtoneActivity extends Activity {
     private static final int REQUEST_SYSTEM_RINGTONE = 61;
     private static final int REQUEST_CUSTOM_AUDIO = 62;
+    private static final int REQUEST_VIBRATION = 63;
     private AlarmConfig alarm;
 
     @Override
@@ -44,34 +45,32 @@ public final class RingtoneActivity extends Activity {
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setBackgroundColor(Ui.COLOR_BACKGROUND);
-        page.addView(Ui.toolbar(this, "铃声与振动", "取消", view -> finish(),
-                "完成", view -> finishWithResult()));
+        page.addView(Ui.toolbar(this, "铃声与振动", "‹",
+                view -> finishWithResult(), "", null));
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(0, Ui.dp(this, 8), 0, Ui.dp(this, 36));
 
-        LinearLayout current = Ui.card(this);
-        TextView title = Ui.heading(this, alarm.ringtoneName, 20);
-        title.setPadding(Ui.dp(this, 4), Ui.dp(this, 18),
-                Ui.dp(this, 4), Ui.dp(this, 6));
-        current.addView(title);
-        TextView detail = Ui.text(this,
-                "振动效果：" + vibrationName(alarm.vibrateMode),
-                14, Ui.COLOR_SUBTEXT);
-        detail.setPadding(Ui.dp(this, 4), 0, Ui.dp(this, 4), Ui.dp(this, 16));
-        current.addView(detail);
-        root.addView(current, Ui.pageCardParams(this));
+        LinearLayout settings = Ui.card(this);
+        settings.addView(Ui.navigationRow(this, "振动效果",
+                vibrationName(alarm.vibrateMode), true, view -> chooseVibration()));
+        settings.addView(Ui.divider(this));
+        settings.addView(Ui.navigationRow(this, "自定义铃声",
+                alarm.ringtoneType == AlarmConfig.RING_CUSTOM
+                        ? alarm.ringtoneName : "", true,
+                view -> pickCustomAudio()));
+        root.addView(settings, Ui.pageCardParams(this));
 
-        TextView ringTitle = Ui.heading(this, "铃声", 18);
+        TextView ringTitle = Ui.text(this, "系统铃声", 15, Ui.COLOR_SUBTEXT);
         ringTitle.setPadding(Ui.dp(this, 22), 0, 0, Ui.dp(this, 10));
         root.addView(ringTitle);
         LinearLayout rings = Ui.card(this);
-        rings.addView(optionRow("静音", "仍可单独设置振动效果",
+        rings.addView(optionRow("无铃声", null,
                 alarm.ringtoneType == AlarmConfig.RING_SILENT,
                 () -> setRingtone(AlarmConfig.RING_SILENT,
-                        "vivo.ring.silence", "静音")));
+                        "vivo.ring.silence", "无铃声")));
         rings.addView(Ui.divider(this));
         rings.addView(optionRow("跟随默认铃声", "使用系统当前默认闹钟铃声",
                 alarm.ringtoneType == AlarmConfig.RING_FOLLOW_DEFAULT,
@@ -83,44 +82,20 @@ public final class RingtoneActivity extends Activity {
                     () -> setRingtone(AlarmConfig.RING_WEATHER, "", "随天气响铃")));
         }
         rings.addView(Ui.divider(this));
-        rings.addView(optionRow("选择系统铃声", "打开系统闹钟铃声列表",
+        rings.addView(optionRow("选择其他系统铃声", "打开系统闹钟铃声列表",
                 alarm.ringtoneType == AlarmConfig.RING_INTERNAL,
                 this::pickSystemRingtone));
-        rings.addView(Ui.divider(this));
-        rings.addView(optionRow("选择本地音频", "音乐或录音，对应 vivo 的自定义铃声",
-                alarm.ringtoneType == AlarmConfig.RING_CUSTOM,
-                this::pickCustomAudio));
         root.addView(rings, Ui.pageCardParams(this));
-
-        TextView vibrateTitle = Ui.heading(this, "振动效果", 18);
-        vibrateTitle.setPadding(Ui.dp(this, 22), 0, 0, Ui.dp(this, 10));
-        root.addView(vibrateTitle);
-        LinearLayout vibration = Ui.card(this);
-        vibration.addView(Ui.row(this, "振动效果",
-                vibrationName(alarm.vibrateMode), true, view -> chooseVibration()));
-        root.addView(vibration, Ui.pageCardParams(this));
-
-        TextView note = Ui.text(this,
-                "“跟随音乐节奏”只适用于跟随默认铃声或系统铃声；选择天气、静音或自定义音频时，vivo 会自动改为“标准”。",
-                13, Ui.COLOR_SUBTEXT);
-        note.setPadding(Ui.dp(this, 22), 0, Ui.dp(this, 22), 0);
-        root.addView(note);
 
         scroll.addView(root);
         page.addView(scroll, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
-        setContentView(page);
+        Ui.setContentView(this, page);
     }
 
     private LinearLayout optionRow(String title, String summary,
             boolean selected, Runnable click) {
-        LinearLayout row = Ui.row(this, title, summary, false, view -> click.run());
-        TextView mark = Ui.heading(this, selected ? "✓" : "", 22);
-        mark.setTextColor(Ui.COLOR_PRIMARY);
-        mark.setGravity(Gravity.CENTER);
-        row.addView(mark, new LinearLayout.LayoutParams(
-                Ui.dp(this, 44), Ui.dp(this, 52)));
-        return row;
+        return Ui.radioRow(this, title, summary, selected, view -> click.run());
     }
 
     private void setRingtone(int type, String uri, String name) {
@@ -172,7 +147,7 @@ public final class RingtoneActivity extends Activity {
                     RingtoneManager.EXTRA_RINGTONE_PICKED_URI);
             if (uri == null) {
                 setRingtone(AlarmConfig.RING_SILENT,
-                        "vivo.ring.silence", "静音");
+                        "vivo.ring.silence", "无铃声");
                 return;
             }
             if (RingtoneManager.isDefault(uri)) {
@@ -187,6 +162,14 @@ public final class RingtoneActivity extends Activity {
             if (uri == null) return;
             setRingtone(AlarmConfig.RING_CUSTOM, uri.toString(),
                     displayName(uri));
+        } else if (requestCode == REQUEST_VIBRATION) {
+            try {
+                alarm = AlarmConfig.fromJsonString(data.getStringExtra(
+                        EditAlarmActivity.EXTRA_ALARM_JSON));
+                render();
+            } catch (JSONException | NullPointerException exception) {
+                Toast.makeText(this, "振动设置读取失败", Toast.LENGTH_LONG).show();
+            }
         }
     }
 
@@ -217,29 +200,9 @@ public final class RingtoneActivity extends Activity {
     }
 
     private void chooseVibration() {
-        String[] names = {"无振动", "跟随音乐节奏", "标准", "舒缓", "心动",
-                "蓝调", "SOS", "弹跳", "呼唤", "热舞", "紧急", "快速"};
-        int[] values = {0, 2, 1, 10, 11, 12, 13, 14, 15, 16, 17, 18};
-        int selected = 0;
-        for (int index = 0; index < values.length; index++) {
-            if (values[index] == alarm.vibrateMode) selected = index;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle("振动效果")
-                .setSingleChoiceItems(names, selected, (dialog, which) -> {
-                    int value = values[which];
-                    if (value == 2 && (alarm.ringtoneType == AlarmConfig.RING_CUSTOM
-                            || alarm.ringtoneType == AlarmConfig.RING_WEATHER
-                            || alarm.ringtoneType == AlarmConfig.RING_SILENT)) {
-                        Toast.makeText(this,
-                                "当前铃声类型不支持跟随音乐节奏，已使用标准",
-                                Toast.LENGTH_LONG).show();
-                        value = 1;
-                    }
-                    alarm = alarm.buildUpon().vibrateMode(value).build();
-                    dialog.dismiss();
-                    render();
-                }).setNegativeButton("取消", null).show();
+        Intent intent = new Intent(this, VibrationActivity.class);
+        intent.putExtra(EditAlarmActivity.EXTRA_ALARM_JSON, alarm.toJsonString());
+        startActivityForResult(intent, REQUEST_VIBRATION);
     }
 
     private String vibrationName(int mode) {
@@ -267,5 +230,10 @@ public final class RingtoneActivity extends Activity {
         result.putExtra(EditAlarmActivity.EXTRA_ALARM_JSON, alarm.toJsonString());
         setResult(RESULT_OK, result);
         finish();
+    }
+
+    @Override
+    public void onBackPressed() {
+        finishWithResult();
     }
 }

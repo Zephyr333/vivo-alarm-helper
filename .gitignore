@@ -1,0 +1,18 @@
+# Build output
+build/
+*.idsig
+VivoAlarmHelper-test.apk
+
+# Local signing material
+debug.keystore
+*.jks
+*.keystore
+
+# Editor and operating-system files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak

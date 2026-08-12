@@ -4,12 +4,12 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -36,23 +36,33 @@ public final class MainActivity extends Activity {
     }
 
     private void buildScreen() {
+        FrameLayout stage = new FrameLayout(this);
+        stage.setBackgroundColor(Ui.COLOR_BACKGROUND);
+
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setBackgroundColor(Ui.COLOR_BACKGROUND);
-        page.addView(Ui.toolbar(this, "闹钟方案", "", null,
-                "新建", view -> editProfile(null)));
+        page.addView(Ui.toolbar(this, "闹钟方案", "", null, "", null));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
+        scroll.setClipToPadding(false);
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(0, Ui.dp(this, 8), 0, Ui.dp(this, 36));
+        content.setPadding(0, Ui.dp(this, 10), 0, Ui.dp(this, 118));
         scroll.addView(content, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
         page.addView(scroll, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
-        setContentView(page);
+        stage.addView(page, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+
+        TextView add = Ui.fab(this, "新增方案");
+        add.setOnClickListener(view -> editProfile(null));
+        stage.addView(add, Ui.fabParams(this));
+        Ui.setContentView(this, stage);
     }
 
     private void populateContent() {
@@ -60,14 +70,10 @@ public final class MainActivity extends Activity {
         content.removeAllViews();
         content.addView(createStatusCard(), Ui.pageCardParams(this));
 
-        LinearLayout heading = new LinearLayout(this);
-        heading.setOrientation(LinearLayout.HORIZONTAL);
-        heading.setGravity(Gravity.CENTER_VERTICAL);
-        heading.setPadding(Ui.dp(this, 22), 0, Ui.dp(this, 18), Ui.dp(this, 10));
-        TextView savedTitle = Ui.heading(this, "已保存方案", 18);
-        heading.addView(savedTitle, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        content.addView(heading);
+        TextView savedTitle = Ui.heading(this, "我的方案", 20);
+        savedTitle.setPadding(Ui.dp(this, 24), Ui.dp(this, 2),
+                Ui.dp(this, 20), Ui.dp(this, 12));
+        content.addView(savedTitle);
 
         List<AlarmProfile> profiles = ProfileStore.getProfiles(this);
         if (profiles.isEmpty()) {
@@ -92,93 +98,92 @@ public final class MainActivity extends Activity {
 
         LinearLayout card = Ui.card(this);
         String state = !clockFound ? "未找到 vivo 系统时钟"
-                : !enabled ? "无障碍服务未启用"
-                : connected ? "已准备好" : "无障碍服务正在连接";
+                : !enabled ? "需要开启无障碍服务"
+                : connected ? "创建服务已就绪" : "正在连接创建服务";
+        String detail = !clockFound ? "请确认手机已安装 vivo 系统时钟。"
+                : !enabled ? "桌面方案需要此服务代你保存 vivo 闹钟。"
+                : connected ? "点击桌面方案即可批量创建闹钟。"
+                : "通常很快完成；也可以点此检查设置。";
         int stateColor = clockFound && enabled && connected
                 ? Ui.COLOR_SUCCESS : Ui.COLOR_WARNING;
-        TextView stateView = Ui.heading(this, state, 17);
-        stateView.setTextColor(stateColor);
-        stateView.setPadding(Ui.dp(this, 4), Ui.dp(this, 16),
-                Ui.dp(this, 4), Ui.dp(this, 4));
-        card.addView(stateView);
-        TextView detail = Ui.text(this,
-                "主应用只管理方案；真正创建闹钟由你添加到桌面的方案快捷方式执行。",
-                13, Ui.COLOR_SUBTEXT);
-        detail.setPadding(Ui.dp(this, 4), 0, Ui.dp(this, 4), Ui.dp(this, 8));
-        card.addView(detail);
-        Button settings = Ui.textButton(this,
-                enabled ? "检查无障碍设置" : "启用无障碍服务");
-        settings.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        settings.setOnClickListener(view -> startActivity(
-                new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
-        card.addView(settings, Ui.matchWrap(Ui.dp(this, 5)));
+        LinearLayout row = Ui.row(this, state, detail, true, view ->
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        TextView dot = Ui.text(this, "●", 17, stateColor);
+        dot.setGravity(Gravity.CENTER);
+        dot.setContentDescription(clockFound && enabled && connected
+                ? "状态正常" : "需要处理");
+        row.addView(dot, 0, new LinearLayout.LayoutParams(
+                Ui.dp(this, 34), Ui.dp(this, 48)));
+        card.addView(row);
         return card;
     }
 
     private View emptyState() {
         LinearLayout card = Ui.card(this);
         card.setGravity(Gravity.CENTER_HORIZONTAL);
+        TextView clock = Ui.text(this, "◷", 52, Ui.COLOR_DISABLED);
+        clock.setGravity(Gravity.CENTER);
+        clock.setPadding(0, Ui.dp(this, 28), 0, Ui.dp(this, 8));
+        card.addView(clock);
         TextView title = Ui.heading(this, "还没有闹钟方案", 18);
-        title.setPadding(0, Ui.dp(this, 28), 0, Ui.dp(this, 8));
         card.addView(title);
         TextView detail = Ui.text(this,
-                "先新建一套方案，再把它添加到桌面。打开或保存主应用都不会创建真实闹钟。",
+                "点击下方红色加号新建方案。",
                 14, Ui.COLOR_SUBTEXT);
         detail.setGravity(Gravity.CENTER);
+        detail.setPadding(0, Ui.dp(this, 8), 0, Ui.dp(this, 28));
         card.addView(detail);
-        Button add = Ui.button(this, "新建方案");
-        add.setTextColor(Color.WHITE);
-        add.setBackground(Ui.roundedBackground(this,
-                Ui.COLOR_PRIMARY, Color.TRANSPARENT, 16));
-        add.setOnClickListener(view -> editProfile(null));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(this, 52));
-        params.setMargins(0, Ui.dp(this, 20), 0, Ui.dp(this, 22));
-        card.addView(add, params);
         return card;
     }
 
     private View createProfileCard(AlarmProfile profile) {
         LinearLayout card = Ui.card(this);
+        card.setClickable(true);
+        card.setFocusable(true);
+        card.setContentDescription("编辑方案 " + profile.getName());
+        card.setOnClickListener(view -> editProfile(profile));
+
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setPadding(Ui.dp(this, 4), Ui.dp(this, 16),
-                Ui.dp(this, 4), Ui.dp(this, 8));
-        TextView name = Ui.heading(this, profile.getName(), 19);
+        top.setPadding(Ui.dp(this, 4), Ui.dp(this, 18),
+                Ui.dp(this, 2), Ui.dp(this, 7));
+        TextView name = Ui.heading(this, profile.getName(), 20);
         top.addView(name, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         TextView count = Ui.text(this,
                 profile.getAlarms().size() + " 个闹钟", 13, Ui.COLOR_SUBTEXT);
         top.addView(count);
+        TextView arrow = Ui.text(this, "›", 30, Ui.COLOR_SUBTEXT);
+        arrow.setGravity(Gravity.CENTER);
+        top.addView(arrow, new LinearLayout.LayoutParams(
+                Ui.dp(this, 30), Ui.dp(this, 44)));
         card.addView(top);
 
         TextView summary = Ui.text(this, profileSummary(profile),
                 14, Ui.COLOR_SUBTEXT);
         summary.setPadding(Ui.dp(this, 4), 0,
-                Ui.dp(this, 4), Ui.dp(this, 14));
+                Ui.dp(this, 4), Ui.dp(this, 15));
         card.addView(summary);
         card.addView(Ui.divider(this));
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setPadding(0, Ui.dp(this, 8), 0, Ui.dp(this, 8));
-        Button edit = Ui.textButton(this, "编辑");
-        edit.setOnClickListener(view -> editProfile(profile));
-        actions.addView(edit, actionParams());
+        actions.setPadding(0, Ui.dp(this, 7), 0, Ui.dp(this, 8));
         Button pin = Ui.textButton(this, "添加到桌面");
-        pin.setOnClickListener(view -> ShortcutHelper.pinProfile(this, profile));
-        actions.addView(pin, actionParams());
+        pin.setOnClickListener(view -> {
+            view.getParent().requestDisallowInterceptTouchEvent(true);
+            ShortcutHelper.pinProfile(this, profile);
+        });
+        actions.addView(pin, new LinearLayout.LayoutParams(
+                0, Ui.dp(this, 50), 1.5f));
         Button delete = Ui.textButton(this, "删除");
-        delete.setTextColor(Color.rgb(194, 55, 51));
+        delete.setTextColor(Ui.COLOR_WARNING);
         delete.setOnClickListener(view -> confirmDelete(profile));
-        actions.addView(delete, actionParams());
+        actions.addView(delete, new LinearLayout.LayoutParams(
+                0, Ui.dp(this, 50), 1f));
         card.addView(actions);
         return card;
-    }
-
-    private LinearLayout.LayoutParams actionParams() {
-        return new LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f);
     }
 
     private void editProfile(AlarmProfile profile) {
@@ -193,7 +198,7 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("删除方案？")
                 .setMessage("将删除“" + profile.getName()
-                        + "”。它已固定到桌面的快捷方式会被停用。")
+                        + "”。它已添加到桌面的快捷方式会停止执行。")
                 .setNegativeButton("取消", null)
                 .setPositiveButton("删除", (dialog, which) -> {
                     if (ProfileStore.deleteProfile(this, profile.getId())) {
@@ -213,10 +218,9 @@ public final class MainActivity extends Activity {
             if (index > 0) value.append(" · ");
             AlarmConfig alarm = profile.getAlarms().get(index);
             if (alarm.timeMode == AlarmConfig.TIME_RELATIVE) {
-                value.append('+').append(alarm.offsetMinutes).append(" 分钟");
+                value.append(TimeText.durationAfter(alarm.offsetMinutes));
             } else {
-                value.append(String.format(java.util.Locale.CHINA,
-                        "%02d:%02d", alarm.hour, alarm.minute));
+                value.append(TimeText.clock(alarm.hour, alarm.minute));
             }
         }
         return value.toString();

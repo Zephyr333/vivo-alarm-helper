@@ -11,6 +11,7 @@ $zipalign = Join-Path $buildTools 'zipalign.exe'
 $apksigner = Join-Path $buildTools 'apksigner.bat'
 $buildDir = Join-Path $projectRoot 'build'
 $classesDir = Join-Path $buildDir 'classes'
+$testClassesDir = Join-Path $buildDir 'test-classes'
 $dexDir = Join-Path $buildDir 'dex'
 $classesJar = Join-Path $buildDir 'classes.jar'
 $compiledResources = Join-Path $buildDir 'resources.zip'
@@ -26,7 +27,10 @@ if (-not (Test-Path -LiteralPath $androidJar)) {
 if (Test-Path -LiteralPath $buildDir) {
     Remove-Item -LiteralPath $buildDir -Recurse -Force
 }
-New-Item -ItemType Directory -Path $classesDir, $dexDir | Out-Null
+New-Item -ItemType Directory -Path $classesDir, $testClassesDir, $dexDir | Out-Null
+
+& (Join-Path $projectRoot 'tests\verify-source.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'source regression checks failed' }
 
 & $aapt2 compile --dir (Join-Path $projectRoot 'res') -o $compiledResources
 if ($LASTEXITCODE -ne 0) { throw 'aapt2 compile failed' }
@@ -37,6 +41,12 @@ if ($LASTEXITCODE -ne 0) { throw 'aapt2 link failed' }
 $javaFiles = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Recurse -Filter '*.java' | ForEach-Object FullName
 & javac -encoding UTF-8 -source 8 -target 8 -classpath $androidJar -d $classesDir $javaFiles
 if ($LASTEXITCODE -ne 0) { throw 'javac failed' }
+
+$testFiles = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'tests') -Filter '*.java' | ForEach-Object FullName
+& javac -encoding UTF-8 -source 8 -target 8 -classpath $classesDir -d $testClassesDir $testFiles
+if ($LASTEXITCODE -ne 0) { throw 'test javac failed' }
+& java -classpath "$classesDir;$testClassesDir" com.example.vivoalarmhelper.TimeTextTest
+if ($LASTEXITCODE -ne 0) { throw 'unit tests failed' }
 
 & jar --create --file $classesJar -C $classesDir .
 if ($LASTEXITCODE -ne 0) { throw 'jar failed' }

@@ -82,7 +82,7 @@ public final class AlarmAccessibilityService extends AccessibilityService {
     private String validate(AlarmConfig config, int number, long t0) {
         if (config.timeMode == AlarmConfig.TIME_RELATIVE
                 && config.repeatType == AlarmConfig.REPEAT_SHIFT_WORKDAY) {
-            return "第 " + number + " 个闹钟的轮班制不能使用相对 t0 模式";
+            return "第 " + number + " 个闹钟的轮班制不能使用“从现在起”";
         }
         if (config.repeatType == AlarmConfig.REPEAT_CUSTOM
                 && config.customDays == 0) {
