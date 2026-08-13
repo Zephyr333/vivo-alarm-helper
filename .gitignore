@@ -1,6 +1,7 @@
 # Build output
 build/
 *.idsig
+VivoAlarmHelper.apk
 VivoAlarmHelper-test.apk
 
 # Local signing material

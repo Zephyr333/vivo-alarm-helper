@@ -38,9 +38,11 @@
 
 详细 APK 字段依据见 [vivo 配置项核对](docs/vivo-alarm-config-audit.md)。
 
-## 构建产物
+## 构建与下载
 
-`VivoAlarmHelper.apk` 使用与已实机验证版本相同的包名和签名，可直接覆盖安装：
+运行 `build.ps1` 后会在项目根目录生成 `VivoAlarmHelper.apk`。APK 和中间构建目录均为可重建产物，不提交到源码仓库。正式安装包请从 [GitHub Releases](https://github.com/Zephyr333/vivo-alarm-helper/releases) 下载。
+
+正式安装包信息：
 
 - 包名：`com.example.vivoalarmhelper`
 - 版本：3.1.1（versionCode 7）
