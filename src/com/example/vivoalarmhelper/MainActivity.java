@@ -19,7 +19,10 @@ import java.util.List;
 
 public final class MainActivity extends Activity {
     private LinearLayout content;
-    private boolean connectionRefreshAttempted;
+    private final AlarmAccessibilityService.ConnectionListener connectionListener = () ->
+            runOnUiThread(() -> {
+                if (!isFinishing()) populateContent();
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -31,8 +34,14 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        connectionRefreshAttempted = false;
+        AlarmAccessibilityService.addConnectionListener(connectionListener);
         populateContent();
+    }
+
+    @Override
+    protected void onPause() {
+        AlarmAccessibilityService.removeConnectionListener(connectionListener);
+        super.onPause();
     }
 
     private void buildScreen() {
@@ -87,30 +96,26 @@ public final class MainActivity extends Activity {
 
     private View createStatusCard() {
         boolean clockFound = isPackageInstalled("com.android.BBKClock");
-        boolean enabled = AccessibilityUtils.isEnabled(this);
-        boolean connected = AlarmAccessibilityService.getConnectedInstance() != null;
-        if (enabled && !connected && !connectionRefreshAttempted) {
-            connectionRefreshAttempted = true;
-            content.postDelayed(() -> {
-                if (!isFinishing()) populateContent();
-            }, 700L);
-        }
+        AccessibilityStatus status = AccessibilityUtils.getStatus(this);
+        boolean connected = status == AccessibilityStatus.CONNECTED;
 
         LinearLayout card = Ui.card(this);
         String state = !clockFound ? "未找到 vivo 系统时钟"
-                : !enabled ? "需要开启无障碍服务"
-                : connected ? "创建服务已就绪" : "正在连接创建服务";
+                : status == AccessibilityStatus.DISABLED ? "无障碍服务未开启"
+                : "无障碍服务已开启";
         String detail = !clockFound ? "请确认手机已安装 vivo 系统时钟。"
-                : !enabled ? "桌面方案需要此服务代你保存 vivo 闹钟。"
+                : status == AccessibilityStatus.DISABLED
+                        ? "桌面方案需要此服务代你保存 vivo 闹钟。"
                 : connected ? "点击桌面方案即可批量创建闹钟。"
-                : "通常很快完成；也可以点此检查设置。";
-        int stateColor = clockFound && enabled && connected
+                : "点击桌面方案时会自动恢复服务并继续执行。";
+        int stateColor = clockFound && status != AccessibilityStatus.DISABLED
                 ? Ui.COLOR_SUCCESS : Ui.COLOR_WARNING;
         LinearLayout row = Ui.row(this, state, detail, true, view ->
                 startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         TextView dot = Ui.text(this, "●", 17, stateColor);
         dot.setGravity(Gravity.CENTER);
-        dot.setContentDescription(clockFound && enabled && connected
+        dot.setContentDescription(clockFound
+                && status != AccessibilityStatus.DISABLED
                 ? "状态正常" : "需要处理");
         row.addView(dot, 0, new LinearLayout.LayoutParams(
                 Ui.dp(this, 34), Ui.dp(this, 48)));

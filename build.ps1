@@ -47,6 +47,12 @@ $testFiles = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'tests') -Filter
 if ($LASTEXITCODE -ne 0) { throw 'test javac failed' }
 & java -classpath "$classesDir;$testClassesDir" com.example.vivoalarmhelper.TimeTextTest
 if ($LASTEXITCODE -ne 0) { throw 'unit tests failed' }
+& java -classpath "$classesDir;$testClassesDir" com.example.vivoalarmhelper.AccessibilityServiceIdsTest
+if ($LASTEXITCODE -ne 0) { throw 'accessibility service id tests failed' }
+& java -classpath "$classesDir;$testClassesDir" com.example.vivoalarmhelper.AccessibilityStatusTest
+if ($LASTEXITCODE -ne 0) { throw 'accessibility status tests failed' }
+& java -classpath "$classesDir;$testClassesDir" com.example.vivoalarmhelper.PendingExecutionPolicyTest
+if ($LASTEXITCODE -ne 0) { throw 'pending execution policy tests failed' }
 
 & jar --create --file $classesJar -C $classesDir .
 if ($LASTEXITCODE -ne 0) { throw 'jar failed' }

@@ -20,6 +20,8 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 public final class AlarmAccessibilityService extends AccessibilityService {
     private static final String CLOCK_PACKAGE = "com.android.BBKClock";
@@ -30,6 +32,8 @@ public final class AlarmAccessibilityService extends AccessibilityService {
     private static final long NEXT_ALARM_DELAY_MS = 750L;
 
     private static volatile AlarmAccessibilityService connectedInstance;
+    private static final Set<ConnectionListener> connectionListeners =
+            new CopyOnWriteArraySet<>();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ArrayDeque<AlarmSpec> pendingAlarms = new ArrayDeque<>();
     private boolean waitingForEditor;
@@ -45,29 +49,88 @@ public final class AlarmAccessibilityService extends AccessibilityService {
         return connectedInstance;
     }
 
+    public static void addConnectionListener(ConnectionListener listener) {
+        if (listener != null) connectionListeners.add(listener);
+    }
+
+    public static void removeConnectionListener(ConnectionListener listener) {
+        if (listener != null) connectionListeners.remove(listener);
+    }
+
+    public boolean isCreatingAlarms() {
+        return isBusy();
+    }
+
+    public void executePendingAlarms() {
+        if (isBusy()) return;
+        PendingExecution pending = PendingExecutionStore.claim(this);
+        if (pending == null) return;
+
+        ProfileStore.ensureInitialized(this);
+        AlarmProfile profile = ProfileStore.getProfile(this, pending.profileId);
+        if (profile == null) {
+            Toast.makeText(this, "待执行的闹钟方案已被删除",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        String error = createAlarms(profile, pending.requestedAt);
+        if (error != null) {
+            Toast.makeText(this, error, Toast.LENGTH_LONG).show();
+        }
+    }
+
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
         connectedInstance = this;
+        notifyConnectionListeners();
+        handler.post(this::executePendingAlarms);
+    }
+
+    @Override
+    public boolean onUnbind(Intent intent) {
+        handleServiceDisconnect("无障碍服务连接已中断");
+        return super.onUnbind(intent);
     }
 
     @Override
     public void onDestroy() {
-        if (connectedInstance == this) connectedInstance = null;
-        handler.removeCallbacksAndMessages(null);
+        handleServiceDisconnect("无障碍服务已停止");
         super.onDestroy();
     }
 
-    /** Returns null when the session started, otherwise a user-facing error. */
-    public String createAlarms(AlarmProfile profile) {
+    private void handleServiceDisconnect(String reason) {
+        if (isBusy()) {
+            failSession(reason);
+        } else {
+            abortQueue();
+        }
+        if (connectedInstance == this) {
+            connectedInstance = null;
+            notifyConnectionListeners();
+        }
+    }
+
+    private static void notifyConnectionListeners() {
+        for (ConnectionListener listener : connectionListeners) {
+            try {
+                listener.onConnectionChanged();
+            } catch (RuntimeException ignored) {
+            }
+        }
+    }
+
+    /** Uses the shortcut click time so reconnect latency never shifts relative alarms. */
+    private String createAlarms(AlarmProfile profile, long requestedAt) {
         if (isBusy()) return "已有一组闹钟正在创建，请稍后再试";
         if (profile.getAlarms().isEmpty()) return "这套方案没有闹钟";
 
-        sessionT0 = System.currentTimeMillis();
+        sessionT0 = requestedAt;
+        long validationNow = System.currentTimeMillis();
         List<AlarmSpec> specs = new ArrayList<>();
         for (int index = 0; index < profile.getAlarms().size(); index++) {
             AlarmConfig config = profile.getAlarms().get(index);
-            String problem = validate(config, index + 1, sessionT0);
+            String problem = validate(config, index + 1, validationNow);
             if (problem != null) return "“" + profile.getName() + "”无法执行：" + problem;
             specs.add(createSpec(config, sessionT0));
         }
@@ -332,12 +395,17 @@ public final class AlarmAccessibilityService extends AccessibilityService {
         sawSetAlarmWindow = false;
         saveTriggered = false;
         pendingAlarms.clear();
-        handler.removeCallbacks(scanRunnable);
+        handler.removeCallbacksAndMessages(null);
     }
 
     @Override
     public void onInterrupt() {
-        abortQueue();
+        // Interrupting feedback is not the same as disconnecting the service.
+        // Shutdown and queue cleanup are handled by onUnbind/onDestroy.
+    }
+
+    public interface ConnectionListener {
+        void onConnectionChanged();
     }
 
     private static final class AlarmSpec {
