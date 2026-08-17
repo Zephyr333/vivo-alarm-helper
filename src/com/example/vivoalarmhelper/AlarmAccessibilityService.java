@@ -73,7 +73,8 @@ public final class AlarmAccessibilityService extends AccessibilityService {
                     Toast.LENGTH_LONG).show();
             return;
         }
-        String error = createAlarms(profile, pending.requestedAt);
+        String error = createAlarms(profile, pending.requestedAt,
+                pending.runtimeBaseTargetAt);
         if (error != null) {
             Toast.makeText(this, error, Toast.LENGTH_LONG).show();
         }
@@ -121,18 +122,43 @@ public final class AlarmAccessibilityService extends AccessibilityService {
     }
 
     /** Uses the shortcut click time so reconnect latency never shifts relative alarms. */
-    private String createAlarms(AlarmProfile profile, long requestedAt) {
+    private String createAlarms(AlarmProfile profile, long requestedAt,
+            long runtimeBaseTargetAt) {
         if (isBusy()) return "已有一组闹钟正在创建，请稍后再试";
         if (profile.getAlarms().isEmpty()) return "这套方案没有闹钟";
 
         sessionT0 = requestedAt;
         long validationNow = System.currentTimeMillis();
+        String sequenceProblem = ProfileTiming.sequenceProblem(profile);
+        if (sequenceProblem != null) {
+            return "“" + profile.getName() + "”无法执行：" + sequenceProblem;
+        }
         List<AlarmSpec> specs = new ArrayList<>();
         for (int index = 0; index < profile.getAlarms().size(); index++) {
             AlarmConfig config = profile.getAlarms().get(index);
-            String problem = validate(config, index + 1, validationNow);
+            String problem = validate(config, index + 1,
+                    validationNow, profile.isSequence());
             if (problem != null) return "“" + profile.getName() + "”无法执行：" + problem;
-            specs.add(createSpec(config, sessionT0));
+            if (profile.isSequence()) {
+                if (runtimeBaseTargetAt <= 0L) {
+                    return "“" + profile.getName()
+                            + "”无法执行：没有选择本次第一个闹钟的时间";
+                }
+                Calendar target = runtimeSequenceTarget(
+                        profile, index, runtimeBaseTargetAt);
+                if (config.repeatType == AlarmConfig.REPEAT_ONCE
+                        && target.getTimeInMillis() <= validationNow) {
+                    return "“" + profile.getName() + "”无法执行：第 "
+                            + (index + 1) + " 个一次性闹钟时间已经过去";
+                }
+                specs.add(new AlarmSpec(target, config));
+            } else {
+                int effectiveOffset = config.timeMode == AlarmConfig.TIME_RELATIVE
+                        ? ProfileTiming.effectiveRelativeOffsetMinutes(
+                                profile, index)
+                        : 0;
+                specs.add(createSpec(config, sessionT0, effectiveOffset));
+            }
         }
         pendingAlarms.addAll(specs);
         activeProfileName = profile.getName();
@@ -142,8 +168,9 @@ public final class AlarmAccessibilityService extends AccessibilityService {
         return null;
     }
 
-    private String validate(AlarmConfig config, int number, long t0) {
-        if (config.timeMode == AlarmConfig.TIME_RELATIVE
+    private String validate(AlarmConfig config, int number, long t0,
+            boolean runtimeSequence) {
+        if (!runtimeSequence && config.timeMode == AlarmConfig.TIME_RELATIVE
                 && config.repeatType == AlarmConfig.REPEAT_SHIFT_WORKDAY) {
             return "第 " + number + " 个闹钟的轮班制不能使用“从现在起”";
         }
@@ -156,7 +183,7 @@ public final class AlarmAccessibilityService extends AccessibilityService {
             for (AlarmConfig.ShiftDay day : config.shiftDays) enabled |= day.enabled;
             if (!enabled) return "第 " + number + " 个轮班闹钟没有启用的周期日";
         }
-        if (config.timeMode == AlarmConfig.TIME_ABSOLUTE
+        if (!runtimeSequence && config.timeMode == AlarmConfig.TIME_ABSOLUTE
                 && config.repeatType == AlarmConfig.REPEAT_ONCE) {
             Calendar target = absoluteTarget(config);
             if (target == null) return "第 " + number + " 个闹钟的日期格式无效";
@@ -167,12 +194,25 @@ public final class AlarmAccessibilityService extends AccessibilityService {
         return null;
     }
 
-    private AlarmSpec createSpec(AlarmConfig config, long t0) {
+    private Calendar runtimeSequenceTarget(AlarmProfile profile,
+            int alarmIndex, long baseTargetAt) {
+        Calendar target = Calendar.getInstance();
+        target.setTimeInMillis(baseTargetAt);
+        target.add(Calendar.MINUTE,
+                ProfileTiming.elapsedAfterRuntimeBaseMinutes(
+                        profile, alarmIndex));
+        target.set(Calendar.SECOND, 0);
+        target.set(Calendar.MILLISECOND, 0);
+        return target;
+    }
+
+    private AlarmSpec createSpec(AlarmConfig config, long t0,
+            int effectiveOffsetMinutes) {
         Calendar target;
         if (config.timeMode == AlarmConfig.TIME_RELATIVE) {
             target = Calendar.getInstance();
             target.setTimeInMillis(t0);
-            target.add(Calendar.MINUTE, config.offsetMinutes);
+            target.add(Calendar.MINUTE, effectiveOffsetMinutes);
         } else if (config.repeatType == AlarmConfig.REPEAT_ONCE) {
             target = absoluteTarget(config);
         } else {

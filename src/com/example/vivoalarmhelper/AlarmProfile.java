@@ -10,14 +10,24 @@ import java.util.List;
 
 public final class AlarmProfile {
     public static final String DEFAULT_ID = "default";
+    public static final int TIMING_INDEPENDENT = 0;
+    public static final int TIMING_SEQUENCE = 1;
 
     private final String id;
     private final String name;
+    private final int timingMode;
     private final List<AlarmConfig> alarms;
 
     public AlarmProfile(String id, String name, List<AlarmConfig> alarms) {
+        this(id, name, TIMING_INDEPENDENT, alarms);
+    }
+
+    public AlarmProfile(String id, String name, int timingMode,
+            List<AlarmConfig> alarms) {
         this.id = id;
         this.name = name;
+        this.timingMode = timingMode == TIMING_SEQUENCE
+                ? TIMING_SEQUENCE : TIMING_INDEPENDENT;
         this.alarms = Collections.unmodifiableList(new ArrayList<>(alarms));
     }
 
@@ -29,6 +39,14 @@ public final class AlarmProfile {
         return name;
     }
 
+    public int getTimingMode() {
+        return timingMode;
+    }
+
+    public boolean isSequence() {
+        return timingMode == TIMING_SEQUENCE;
+    }
+
     public List<AlarmConfig> getAlarms() {
         return alarms;
     }
@@ -37,6 +55,7 @@ public final class AlarmProfile {
         JSONObject item = new JSONObject();
         item.put("id", id);
         item.put("name", name);
+        item.put("timingMode", timingMode);
         JSONArray alarmItems = new JSONArray();
         for (AlarmConfig alarm : alarms) {
             alarmItems.put(alarm.toJson());
@@ -56,6 +75,7 @@ public final class AlarmProfile {
         if (id.trim().isEmpty() || name.trim().isEmpty() || alarms.isEmpty()) {
             throw new JSONException("Invalid profile");
         }
-        return new AlarmProfile(id, name, alarms);
+        return new AlarmProfile(id, name,
+                item.optInt("timingMode", TIMING_INDEPENDENT), alarms);
     }
 }

@@ -12,6 +12,7 @@ import org.json.JSONException;
 
 public final class RepeatActivity extends Activity {
     private AlarmConfig alarm;
+    private boolean sequenceMode;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -23,6 +24,8 @@ public final class RepeatActivity extends Activity {
             finish();
             return;
         }
+        sequenceMode = getIntent().getBooleanExtra(
+                EditAlarmActivity.EXTRA_SEQUENCE_MODE, false);
         render();
     }
 
@@ -77,6 +80,12 @@ public final class RepeatActivity extends Activity {
     }
 
     private void selectRepeat(int repeatType) {
+        if (sequenceMode && repeatType == AlarmConfig.REPEAT_SHIFT_WORKDAY) {
+            Toast.makeText(this,
+                    "执行时选择时间＋间隔不能使用轮班制时间；如需轮班制，请在方案中选择“每个闹钟分别设置”",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         if (repeatType == AlarmConfig.REPEAT_SHIFT_WORKDAY
                 && alarm.timeMode == AlarmConfig.TIME_RELATIVE) {
             new AlertDialog.Builder(this)

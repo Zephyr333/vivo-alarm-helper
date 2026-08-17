@@ -17,7 +17,7 @@ public final class ProfileStore {
     private static final String KEY_PROFILES = "profiles_json";
     private static final String KEY_INITIALIZED = "profiles_initialized";
     private static final String KEY_CORRUPT_BACKUP = "profiles_json_corrupt_backup";
-    private static final int DATA_VERSION = 2;
+    private static final int DATA_VERSION = 4;
 
     private ProfileStore() {
     }
@@ -46,7 +46,7 @@ public final class ProfileStore {
         ensureInitialized(context);
         SharedPreferences preferences = preferences(context);
         try {
-            return parseVersion2(preferences.getString(KEY_PROFILES, ""));
+            return parseCurrent(preferences.getString(KEY_PROFILES, ""));
         } catch (JSONException exception) {
             String damaged = preferences.getString(KEY_PROFILES, "");
             preferences.edit().putString(KEY_CORRUPT_BACKUP, damaged).commit();
@@ -90,6 +90,24 @@ public final class ProfileStore {
         return removed && writeProfiles(preferences(context), profiles);
     }
 
+    public static synchronized boolean moveProfile(Context context,
+            String sourceId, String targetId) {
+        if (sourceId == null || targetId == null) return false;
+        List<AlarmProfile> profiles = new ArrayList<>(getProfiles(context));
+        int sourceIndex = -1;
+        int targetIndex = -1;
+        for (int index = 0; index < profiles.size(); index++) {
+            String id = profiles.get(index).getId();
+            if (sourceId.equals(id)) sourceIndex = index;
+            if (targetId.equals(id)) targetIndex = index;
+        }
+        if (sourceIndex < 0 || targetIndex < 0) return false;
+        if (sourceIndex == targetIndex) return true;
+        AlarmProfile moved = profiles.remove(sourceIndex);
+        profiles.add(targetIndex, moved);
+        return writeProfiles(preferences(context), profiles);
+    }
+
     private static SharedPreferences preferences(Context context) {
         return context.getApplicationContext().getSharedPreferences(
                 PREFS_NAME, Context.MODE_PRIVATE);
@@ -122,18 +140,36 @@ public final class ProfileStore {
             throws JSONException {
         JSONObject root = new JSONObject(json);
         int version = root.optInt("version", 1);
-        return version >= 2 ? parseVersion2(json) : migrateVersion1(root);
+        return version >= 2 ? parseCurrent(json) : migrateVersion1(root);
     }
 
-    private static List<AlarmProfile> parseVersion2(String json)
+    private static List<AlarmProfile> parseCurrent(String json)
             throws JSONException {
         JSONObject root = new JSONObject(json);
+        int version = root.optInt("version", 2);
         JSONArray items = root.getJSONArray("profiles");
         List<AlarmProfile> profiles = new ArrayList<>();
         for (int index = 0; index < items.length(); index++) {
-            profiles.add(AlarmProfile.fromJson(items.getJSONObject(index)));
+            AlarmProfile profile = AlarmProfile.fromJson(
+                    items.getJSONObject(index));
+            profiles.add(version < 4 && profile.isSequence()
+                    ? migratePresetSequence(profile) : profile);
         }
         return profiles;
+    }
+
+    /** 3.2.0 rc1/rc2 stored a fixed first offset; retain its actual times. */
+    private static AlarmProfile migratePresetSequence(AlarmProfile profile) {
+        List<AlarmConfig> converted = new ArrayList<>();
+        long elapsed = 0L;
+        for (AlarmConfig alarm : profile.getAlarms()) {
+            elapsed += alarm.offsetMinutes;
+            int safe = (int) Math.max(1L,
+                    Math.min(ProfileTiming.MAX_OFFSET_MINUTES, elapsed));
+            converted.add(alarm.buildUpon().offsetMinutes(safe).build());
+        }
+        return new AlarmProfile(profile.getId(), profile.getName(),
+                AlarmProfile.TIMING_INDEPENDENT, converted);
     }
 
     private static List<AlarmProfile> migrateVersion1(JSONObject root)

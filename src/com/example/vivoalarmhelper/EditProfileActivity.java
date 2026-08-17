@@ -25,6 +25,8 @@ public final class EditProfileActivity extends Activity {
     private final ArrayList<AlarmConfig> alarms = new ArrayList<>();
     private String editingId;
     private String profileName = "";
+    private int timingMode = AlarmProfile.TIMING_INDEPENDENT;
+    private boolean creatingProfile;
     private String initialSignature;
     private TextView nameValue;
     private LinearLayout alarmContainer;
@@ -43,19 +45,21 @@ public final class EditProfileActivity extends Activity {
         }
         if (profile != null) {
             profileName = profile.getName();
+            timingMode = profile.getTimingMode();
             alarms.addAll(profile.getAlarms());
         }
         initialSignature = draftSignature();
-        buildScreen(profile == null);
+        creatingProfile = profile == null;
+        buildScreen();
     }
 
-    private void buildScreen(boolean creating) {
+    private void buildScreen() {
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setBackgroundColor(Ui.COLOR_BACKGROUND);
         page.addView(Ui.toolbar(this,
-                creating ? "新建方案" : "编辑方案",
-                creating ? "取消" : "‹", view -> handleBack(),
+                creatingProfile ? "新建方案" : "编辑方案",
+                creatingProfile ? "取消" : "‹", view -> handleBack(),
                 "保存", view -> saveProfile()));
 
         ScrollView scroll = new ScrollView(this);
@@ -72,12 +76,20 @@ public final class EditProfileActivity extends Activity {
         nameCard.addView(nameRow);
         root.addView(nameCard, Ui.pageCardParams(this));
 
+        TextView timingTitle = Ui.heading(this, "时间安排", 20);
+        timingTitle.setPadding(Ui.dp(this, 24), Ui.dp(this, 2),
+                Ui.dp(this, 20), Ui.dp(this, 8));
+        root.addView(timingTitle);
+        root.addView(timingCard(), Ui.pageCardParams(this));
+
         TextView section = Ui.heading(this, "方案中的闹钟", 20);
         section.setPadding(Ui.dp(this, 24), Ui.dp(this, 2),
                 Ui.dp(this, 20), Ui.dp(this, 8));
         root.addView(section);
         TextView hint = Ui.text(this,
-                "点击桌面方案时，所有“从现在起”的闹钟都会以同一个时刻开始计算。按住 ≡ 可以调整顺序。",
+                timingMode == AlarmProfile.TIMING_SEQUENCE
+                        ? "方案只保存后续间隔。每次执行时，再为第一个闹钟选择“从现在起”或“指定时间”。"
+                        : "每个闹钟分别设置。所有“从现在起”的闹钟在执行时使用同一个当前时间。按住 ≡ 可以调整顺序。",
                 13, Ui.COLOR_SUBTEXT);
         hint.setPadding(Ui.dp(this, 24), 0, Ui.dp(this, 24), Ui.dp(this, 14));
         root.addView(hint);
@@ -91,7 +103,12 @@ public final class EditProfileActivity extends Activity {
         TextView addIcon = Ui.text(this, "+", 28, Ui.COLOR_PRIMARY);
         addIcon.setGravity(Gravity.CENTER);
         LinearLayout addRow = Ui.row(this, "添加一个闹钟",
-                "每个闹钟都可以单独设置", false, view -> addAlarm());
+                timingMode == AlarmProfile.TIMING_SEQUENCE
+                        ? (alarms.isEmpty()
+                                ? "先添加第一个闹钟"
+                                : "设置与前一个闹钟的间隔")
+                        : "每个闹钟都可以单独设置",
+                false, view -> addAlarm());
         addRow.addView(addIcon, 0, new LinearLayout.LayoutParams(
                 Ui.dp(this, 44), Ui.dp(this, 52)));
         addCard.addView(addRow);
@@ -110,6 +127,96 @@ public final class EditProfileActivity extends Activity {
         page.addView(scroll, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         Ui.setContentView(this, page);
+    }
+
+    private View timingCard() {
+        LinearLayout card = Ui.card(this);
+        card.addView(Ui.radioRow(this,
+                "每个闹钟分别设置",
+                "每个闹钟可选择从现在起或指定时间",
+                timingMode == AlarmProfile.TIMING_INDEPENDENT,
+                view -> selectTimingMode(AlarmProfile.TIMING_INDEPENDENT)));
+        card.addView(Ui.divider(this));
+        card.addView(Ui.radioRow(this,
+                "执行时选择时间＋间隔",
+                "每次执行时选择第一个时间，方案只保存后续间隔",
+                timingMode == AlarmProfile.TIMING_SEQUENCE,
+                view -> selectTimingMode(AlarmProfile.TIMING_SEQUENCE)));
+        return card;
+    }
+
+    private void selectTimingMode(int selectedMode) {
+        if (selectedMode == timingMode) return;
+        if (selectedMode == AlarmProfile.TIMING_SEQUENCE) {
+            convertToSequence();
+        } else {
+            convertToIndependent();
+        }
+    }
+
+    private void convertToSequence() {
+        int previous = 0;
+        for (int index = 0; index < alarms.size(); index++) {
+            AlarmConfig alarm = alarms.get(index);
+            if (alarm.timeMode != AlarmConfig.TIME_RELATIVE
+                    || alarm.repeatType == AlarmConfig.REPEAT_SHIFT_WORKDAY) {
+                Toast.makeText(this,
+                        "切换前，请先把第 " + (index + 1)
+                                + " 个闹钟改为“从现在起”",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+            if (index > 0 && alarm.offsetMinutes <= previous) {
+                Toast.makeText(this,
+                        "请先把闹钟按时间先后排列，并确保后一个晚于前一个",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+            previous = alarm.offsetMinutes;
+        }
+
+        previous = 0;
+        for (int index = 0; index < alarms.size(); index++) {
+            AlarmConfig alarm = alarms.get(index);
+            int original = alarm.offsetMinutes;
+            int step = index == 0 ? 1 : original - previous;
+            alarms.set(index, alarm.buildUpon().offsetMinutes(step).build());
+            previous = original;
+        }
+        timingMode = AlarmProfile.TIMING_SEQUENCE;
+        buildScreen();
+    }
+
+    private void convertToIndependent() {
+        if (alarms.isEmpty()) {
+            timingMode = AlarmProfile.TIMING_INDEPENDENT;
+            buildScreen();
+            return;
+        }
+        VivoDialogs.showDuration(this,
+                "设置第一个闹钟多久以后", 60,
+                this::convertToIndependentWithBase);
+    }
+
+    private void convertToIndependentWithBase(int baseMinutes) {
+        long elapsed = baseMinutes;
+        ArrayList<AlarmConfig> converted = new ArrayList<>();
+        for (int index = 0; index < alarms.size(); index++) {
+            if (index > 0) elapsed += alarms.get(index).offsetMinutes;
+            if (elapsed > ProfileTiming.MAX_OFFSET_MINUTES) {
+                Toast.makeText(this,
+                        "整组时间超过 8760 小时，请先缩短等待时间或间隔",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+            AlarmConfig alarm = alarms.get(index);
+            converted.add(alarm.buildUpon()
+                    .offsetMinutes((int) elapsed).build());
+        }
+        alarms.clear();
+        alarms.addAll(converted);
+        timingMode = AlarmProfile.TIMING_INDEPENDENT;
+        buildScreen();
     }
 
     private void editProfileName() {
@@ -148,7 +255,7 @@ public final class EditProfileActivity extends Activity {
         card.setClickable(true);
         card.setFocusable(true);
         card.setContentDescription("编辑闹钟 " + (index + 1) + "，"
-                + alarmTimeSummary(alarm));
+                + alarmTimeSummary(index, alarm));
         card.setOnClickListener(view -> editAlarm(index));
         card.setOnDragListener((view, event) -> handleDrop(index, view, event));
 
@@ -161,8 +268,10 @@ public final class EditProfileActivity extends Activity {
         top.addView(number, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         TextView mode = Ui.text(this,
-                alarm.timeMode == AlarmConfig.TIME_RELATIVE
-                        ? "从现在起" : "指定时间",
+                timingMode == AlarmProfile.TIMING_SEQUENCE
+                        ? (index == 0 ? "执行时选择" : "与前一个间隔")
+                        : alarm.timeMode == AlarmConfig.TIME_RELATIVE
+                                ? "从现在起" : "指定时间",
                 13, Ui.COLOR_PRIMARY);
         mode.setPadding(Ui.dp(this, 11), Ui.dp(this, 5),
                 Ui.dp(this, 11), Ui.dp(this, 5));
@@ -171,7 +280,7 @@ public final class EditProfileActivity extends Activity {
         top.addView(mode);
         card.addView(top);
 
-        TextView main = Ui.heading(this, alarmTimeSummary(alarm), 27);
+        TextView main = Ui.heading(this, alarmTimeSummary(index, alarm), 27);
         main.setPadding(Ui.dp(this, 4), Ui.dp(this, 3),
                 Ui.dp(this, 4), Ui.dp(this, 6));
         card.addView(main);
@@ -246,11 +355,15 @@ public final class EditProfileActivity extends Activity {
         return true;
     }
 
-    private String alarmTimeSummary(AlarmConfig alarm) {
+    private String alarmTimeSummary(int index, AlarmConfig alarm) {
         if (alarm.repeatType == AlarmConfig.REPEAT_SHIFT_WORKDAY) {
             return alarm.shiftDaysCount + " 天轮班周期";
         }
         if (alarm.timeMode == AlarmConfig.TIME_RELATIVE) {
+            if (timingMode == AlarmProfile.TIMING_SEQUENCE) {
+                return index == 0 ? "执行时选择第一个时间"
+                        : "间隔 " + TimeText.duration(alarm.offsetMinutes);
+            }
             return TimeText.durationAfter(alarm.offsetMinutes);
         }
         return TimeText.clock(alarm.hour, alarm.minute);
@@ -263,8 +376,11 @@ public final class EditProfileActivity extends Activity {
     }
 
     private void addAlarm() {
-        int offset = alarms.isEmpty() ? 60
-                : Math.min(525600, alarms.get(alarms.size() - 1).offsetMinutes + 15);
+        int offset = alarms.isEmpty()
+                ? timingMode == AlarmProfile.TIMING_SEQUENCE ? 1 : 60
+                : timingMode == AlarmProfile.TIMING_SEQUENCE ? 15
+                : Math.min(ProfileTiming.MAX_OFFSET_MINUTES,
+                        alarms.get(alarms.size() - 1).offsetMinutes + 15);
         pendingAlarmIndex = -1;
         launchAlarmEditor(AlarmConfig.defaultRelative(offset), true);
     }
@@ -278,6 +394,10 @@ public final class EditProfileActivity extends Activity {
         Intent intent = new Intent(this, EditAlarmActivity.class);
         intent.putExtra(EditAlarmActivity.EXTRA_ALARM_JSON, alarm.toJsonString());
         intent.putExtra(EditAlarmActivity.EXTRA_IS_NEW, creating);
+        intent.putExtra(EditAlarmActivity.EXTRA_SEQUENCE_MODE,
+                timingMode == AlarmProfile.TIMING_SEQUENCE);
+        intent.putExtra(EditAlarmActivity.EXTRA_SEQUENCE_INDEX,
+                pendingAlarmIndex >= 0 ? pendingAlarmIndex : alarms.size());
         startActivityForResult(intent, REQUEST_EDIT_ALARM);
     }
 
@@ -289,6 +409,13 @@ public final class EditProfileActivity extends Activity {
         try {
             AlarmConfig alarm = AlarmConfig.fromJsonString(
                     data.getStringExtra(EditAlarmActivity.EXTRA_ALARM_JSON));
+            if (timingMode == AlarmProfile.TIMING_SEQUENCE
+                    && alarm.timeMode != AlarmConfig.TIME_RELATIVE) {
+                Toast.makeText(this,
+                        "时间序列中的闹钟必须使用“从现在起”",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
             if (pendingAlarmIndex >= 0 && pendingAlarmIndex < alarms.size()) {
                 alarms.set(pendingAlarmIndex, alarm);
             } else {
@@ -331,7 +458,13 @@ public final class EditProfileActivity extends Activity {
             return;
         }
         String id = editingId == null ? UUID.randomUUID().toString() : editingId;
-        AlarmProfile profile = new AlarmProfile(id, name, new ArrayList<>(alarms));
+        AlarmProfile profile = new AlarmProfile(
+                id, name, timingMode, new ArrayList<>(alarms));
+        String timingProblem = ProfileTiming.sequenceProblem(profile);
+        if (timingProblem != null) {
+            Toast.makeText(this, timingProblem, Toast.LENGTH_LONG).show();
+            return;
+        }
         if (!ProfileStore.saveProfile(this, profile)) {
             Toast.makeText(this, "方案保存失败，请重试", Toast.LENGTH_LONG).show();
             return;
@@ -361,7 +494,8 @@ public final class EditProfileActivity extends Activity {
     }
 
     private String draftSignature() {
-        StringBuilder value = new StringBuilder(profileName).append('|');
+        StringBuilder value = new StringBuilder(profileName).append('|')
+                .append(timingMode).append('|');
         for (AlarmConfig alarm : alarms) value.append(alarm.toJsonString()).append('|');
         return value.toString();
     }
