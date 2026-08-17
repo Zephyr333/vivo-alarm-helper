@@ -13,6 +13,8 @@ final class PendingExecutionStore {
     private static final String KEY_TOKEN = "token";
     private static final String KEY_PROFILE_ID = "profile_id";
     private static final String KEY_REQUESTED_AT = "requested_at";
+    private static final String KEY_RUNTIME_BASE_TARGET_AT =
+            "runtime_base_target_at";
 
     private PendingExecutionStore() {
     }
@@ -20,6 +22,11 @@ final class PendingExecutionStore {
     /** Returns null when another fresh execution is already waiting. */
     static synchronized PendingExecution enqueue(
             Context context, String profileId, long requestedAt) {
+        return enqueue(context, profileId, requestedAt, 0L);
+    }
+
+    static synchronized PendingExecution enqueue(Context context,
+            String profileId, long requestedAt, long runtimeBaseTargetAt) {
         SharedPreferences preferences = preferences(context);
         PendingExecution existing = read(preferences);
         long now = System.currentTimeMillis();
@@ -27,11 +34,14 @@ final class PendingExecutionStore {
         clear(preferences);
 
         PendingExecution pending = new PendingExecution(
-                UUID.randomUUID().toString(), profileId, requestedAt);
+                UUID.randomUUID().toString(), profileId, requestedAt,
+                runtimeBaseTargetAt);
         boolean saved = preferences.edit()
                 .putString(KEY_TOKEN, pending.token)
                 .putString(KEY_PROFILE_ID, pending.profileId)
                 .putLong(KEY_REQUESTED_AT, pending.requestedAt)
+                .putLong(KEY_RUNTIME_BASE_TARGET_AT,
+                        pending.runtimeBaseTargetAt)
                 .commit();
         if (!saved) {
             throw new IllegalStateException("Unable to save pending execution");
@@ -71,8 +81,11 @@ final class PendingExecutionStore {
         String token = preferences.getString(KEY_TOKEN, "");
         String profileId = preferences.getString(KEY_PROFILE_ID, "");
         long requestedAt = preferences.getLong(KEY_REQUESTED_AT, 0L);
+        long runtimeBaseTargetAt = preferences.getLong(
+                KEY_RUNTIME_BASE_TARGET_AT, 0L);
         if (TextUtils.isEmpty(token) || TextUtils.isEmpty(profileId)) return null;
-        return new PendingExecution(token, profileId, requestedAt);
+        return new PendingExecution(token, profileId, requestedAt,
+                runtimeBaseTargetAt);
     }
 
     private static boolean clear(SharedPreferences preferences) {

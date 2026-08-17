@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">vivo 闹钟方案</string>
-    <string name="accessibility_description">仅在 vivo 系统时钟的新建闹钟页面识别并执行“完成”，用于保存用户主动从桌面方案快捷方式创建的闹钟。</string>
+    <string name="accessibility_description">仅在 vivo 系统时钟的新建闹钟页面识别并执行“完成”，用于保存用户主动在应用内或通过方案桌面快捷方式创建的闹钟。</string>
 </resources>

@@ -2,10 +2,12 @@ package com.example.vivoalarmhelper;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.view.DragEvent;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -79,12 +81,20 @@ public final class MainActivity extends Activity {
         content.removeAllViews();
         content.addView(createStatusCard(), Ui.pageCardParams(this));
 
+        List<AlarmProfile> profiles = ProfileStore.getProfiles(this);
         TextView savedTitle = Ui.heading(this, "我的方案", 20);
         savedTitle.setPadding(Ui.dp(this, 24), Ui.dp(this, 2),
-                Ui.dp(this, 20), Ui.dp(this, 12));
+                Ui.dp(this, 20), Ui.dp(this, profiles.size() > 1 ? 4 : 12));
         content.addView(savedTitle);
+        if (profiles.size() > 1) {
+            TextView orderHint = Ui.text(this,
+                    "按住方案卡片右上角的 ≡，拖到另一套方案的位置即可排序。",
+                    13, Ui.COLOR_SUBTEXT);
+            orderHint.setPadding(Ui.dp(this, 24), 0,
+                    Ui.dp(this, 24), Ui.dp(this, 12));
+            content.addView(orderHint);
+        }
 
-        List<AlarmProfile> profiles = ProfileStore.getProfiles(this);
         if (profiles.isEmpty()) {
             content.addView(emptyState(), Ui.pageCardParams(this));
             return;
@@ -105,9 +115,9 @@ public final class MainActivity extends Activity {
                 : "无障碍服务已开启";
         String detail = !clockFound ? "请确认手机已安装 vivo 系统时钟。"
                 : status == AccessibilityStatus.DISABLED
-                        ? "桌面方案需要此服务代你保存 vivo 闹钟。"
-                : connected ? "点击桌面方案即可批量创建闹钟。"
-                : "点击桌面方案时会自动恢复服务并继续执行。";
+                        ? "执行方案需要此服务代你保存 vivo 闹钟。"
+                : connected ? "可以在应用内执行，也可以使用桌面快捷方式。"
+                : "执行方案时会自动恢复服务并继续。";
         int stateColor = clockFound && status != AccessibilityStatus.DISABLED
                 ? Ui.COLOR_SUCCESS : Ui.COLOR_WARNING;
         LinearLayout row = Ui.row(this, state, detail, true, view ->
@@ -147,6 +157,8 @@ public final class MainActivity extends Activity {
         card.setFocusable(true);
         card.setContentDescription("编辑方案 " + profile.getName());
         card.setOnClickListener(view -> editProfile(profile));
+        card.setOnDragListener((view, event) ->
+                handleProfileDrop(profile.getId(), view, event));
 
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
@@ -157,12 +169,26 @@ public final class MainActivity extends Activity {
         top.addView(name, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         TextView count = Ui.text(this,
-                profile.getAlarms().size() + " 个闹钟", 13, Ui.COLOR_SUBTEXT);
+                profile.getAlarms().size() + " 个闹钟"
+                        + (profile.isSequence() ? " · 执行时选时间" : ""),
+                13, Ui.COLOR_SUBTEXT);
         top.addView(count);
-        TextView arrow = Ui.text(this, "›", 30, Ui.COLOR_SUBTEXT);
-        arrow.setGravity(Gravity.CENTER);
-        top.addView(arrow, new LinearLayout.LayoutParams(
-                Ui.dp(this, 30), Ui.dp(this, 44)));
+        TextView handle = Ui.text(this, "≡", 30, Ui.COLOR_TEXT);
+        handle.setGravity(Gravity.CENTER);
+        handle.setContentDescription("按住拖动方案 " + profile.getName());
+        handle.setClickable(true);
+        handle.setFocusable(true);
+        handle.setOnClickListener(view -> Toast.makeText(this,
+                "请按住并拖动到另一套方案的位置",
+                Toast.LENGTH_SHORT).show());
+        handle.setOnLongClickListener(view -> {
+            ClipData data = ClipData.newPlainText(
+                    "profile_id", profile.getId());
+            return view.startDragAndDrop(data,
+                    new View.DragShadowBuilder(card), null, 0);
+        });
+        top.addView(handle, new LinearLayout.LayoutParams(
+                Ui.dp(this, 52), Ui.dp(this, 48)));
         card.addView(top);
 
         TextView summary = Ui.text(this, profileSummary(profile),
@@ -175,13 +201,24 @@ public final class MainActivity extends Activity {
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setPadding(0, Ui.dp(this, 7), 0, Ui.dp(this, 8));
+        Button run = Ui.button(this, "执行");
+        run.setTextColor(android.graphics.Color.WHITE);
+        run.setContentDescription("执行方案 " + profile.getName());
+        run.setBackground(Ui.roundedBackground(this,
+                Ui.COLOR_PRIMARY, android.graphics.Color.TRANSPARENT, 18));
+        run.setOnClickListener(view -> runProfile(profile));
+        LinearLayout.LayoutParams runParams = new LinearLayout.LayoutParams(
+                0, Ui.dp(this, 46), 1f);
+        runParams.setMargins(Ui.dp(this, 2), Ui.dp(this, 2),
+                Ui.dp(this, 4), Ui.dp(this, 2));
+        actions.addView(run, runParams);
         Button pin = Ui.textButton(this, "添加到桌面");
         pin.setOnClickListener(view -> {
             view.getParent().requestDisallowInterceptTouchEvent(true);
             ShortcutHelper.pinProfile(this, profile);
         });
         actions.addView(pin, new LinearLayout.LayoutParams(
-                0, Ui.dp(this, 50), 1.5f));
+                0, Ui.dp(this, 50), 1.45f));
         Button delete = Ui.textButton(this, "删除");
         delete.setTextColor(Ui.COLOR_WARNING);
         delete.setOnClickListener(view -> confirmDelete(profile));
@@ -197,6 +234,36 @@ public final class MainActivity extends Activity {
             intent.putExtra(EditProfileActivity.EXTRA_PROFILE_ID, profile.getId());
         }
         startActivity(intent);
+    }
+
+    private void runProfile(AlarmProfile profile) {
+        startActivity(CreateAlarmsActivity.createRunIntent(
+                this, profile.getId()));
+    }
+
+    private boolean handleProfileDrop(String targetId, View view,
+            DragEvent event) {
+        if (event.getAction() == DragEvent.ACTION_DRAG_ENTERED) {
+            view.setAlpha(0.72f);
+        } else if (event.getAction() == DragEvent.ACTION_DRAG_EXITED
+                || event.getAction() == DragEvent.ACTION_DRAG_ENDED) {
+            view.setAlpha(1f);
+        } else if (event.getAction() == DragEvent.ACTION_DROP) {
+            view.setAlpha(1f);
+            ClipData data = event.getClipData();
+            if (data == null || data.getItemCount() == 0) return false;
+            String sourceId = data.getItemAt(0)
+                    .coerceToText(this).toString();
+            if (sourceId.equals(targetId)) return true;
+            if (ProfileStore.moveProfile(this, sourceId, targetId)) {
+                populateContent();
+            } else {
+                Toast.makeText(this, "方案排序失败，请重试",
+                        Toast.LENGTH_LONG).show();
+            }
+            return true;
+        }
+        return true;
     }
 
     private void confirmDelete(AlarmProfile profile) {
@@ -218,12 +285,25 @@ public final class MainActivity extends Activity {
     }
 
     private String profileSummary(AlarmProfile profile) {
+        String sequenceProblem = ProfileTiming.sequenceProblem(profile);
+        if (sequenceProblem != null) return "时间设置需要调整";
+        if (profile.isSequence()) {
+            StringBuilder sequence = new StringBuilder("执行时选择第一个时间");
+            for (int index = 1; index < profile.getAlarms().size(); index++) {
+                sequence.append(index == 1 ? " · 间隔 " : " · 再间隔 ")
+                        .append(TimeText.duration(
+                                profile.getAlarms().get(index).offsetMinutes));
+            }
+            return sequence.toString();
+        }
         StringBuilder value = new StringBuilder();
         for (int index = 0; index < profile.getAlarms().size(); index++) {
             if (index > 0) value.append(" · ");
             AlarmConfig alarm = profile.getAlarms().get(index);
             if (alarm.timeMode == AlarmConfig.TIME_RELATIVE) {
-                value.append(TimeText.durationAfter(alarm.offsetMinutes));
+                value.append(TimeText.durationAfter(
+                        ProfileTiming.effectiveRelativeOffsetMinutes(
+                                profile, index)));
             } else {
                 value.append(TimeText.clock(alarm.hour, alarm.minute));
             }

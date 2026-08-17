@@ -25,9 +25,10 @@ if (-not (Test-Path -LiteralPath $androidJar)) {
 }
 
 if (Test-Path -LiteralPath $buildDir) {
-    Remove-Item -LiteralPath $buildDir -Recurse -Force
+    Get-ChildItem -LiteralPath $buildDir -File -Recurse -Force |
+        ForEach-Object { [System.IO.File]::Delete($_.FullName) }
 }
-New-Item -ItemType Directory -Path $classesDir, $testClassesDir, $dexDir | Out-Null
+New-Item -ItemType Directory -Force -Path $classesDir, $testClassesDir, $dexDir | Out-Null
 
 & (Join-Path $projectRoot 'tests\verify-source.ps1')
 if ($LASTEXITCODE -ne 0) { throw 'source regression checks failed' }
@@ -53,6 +54,8 @@ if ($LASTEXITCODE -ne 0) { throw 'accessibility service id tests failed' }
 if ($LASTEXITCODE -ne 0) { throw 'accessibility status tests failed' }
 & java -classpath "$classesDir;$testClassesDir" com.example.vivoalarmhelper.PendingExecutionPolicyTest
 if ($LASTEXITCODE -ne 0) { throw 'pending execution policy tests failed' }
+& java -classpath "$classesDir;$testClassesDir" com.example.vivoalarmhelper.SequenceOffsetsTest
+if ($LASTEXITCODE -ne 0) { throw 'profile timing tests failed' }
 
 & jar --create --file $classesJar -C $classesDir .
 if ($LASTEXITCODE -ne 0) { throw 'jar failed' }
@@ -83,3 +86,8 @@ if ($LASTEXITCODE -ne 0) { throw 'apksigner failed' }
 if ($LASTEXITCODE -ne 0) { throw 'APK verification failed' }
 
 Get-Item -LiteralPath $outputApk | Select-Object FullName, Length, LastWriteTime
+
+# OneDrive may protect inherited directories from deletion. Remove generated
+# files while retaining the ignored empty directory tree for the next build.
+Get-ChildItem -LiteralPath $buildDir -File -Recurse -Force |
+    ForEach-Object { [System.IO.File]::Delete($_.FullName) }

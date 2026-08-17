@@ -84,9 +84,8 @@ public final class ShortcutHelper {
     }
 
     private static ShortcutInfo buildShortcut(Context context, AlarmProfile profile) {
-        Intent intent = new Intent(context, CreateAlarmsActivity.class);
-        intent.setAction(CreateAlarmsActivity.ACTION_RUN_PROFILE);
-        intent.putExtra(CreateAlarmsActivity.EXTRA_PROFILE_ID, profile.getId());
+        Intent intent = CreateAlarmsActivity.createRunIntent(
+                context, profile.getId());
         int iconId = context.getResources().getIdentifier(
                 "ic_launcher", "mipmap", context.getPackageName());
         return new ShortcutInfo.Builder(context, shortcutId(profile.getId()))

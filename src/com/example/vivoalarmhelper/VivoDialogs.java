@@ -33,8 +33,13 @@ public final class VivoDialogs {
 
     public static void showDuration(Activity activity, int totalMinutes,
             IntCallback callback) {
+        showDuration(activity, "多久以后提醒", totalMinutes, callback);
+    }
+
+    public static void showDuration(Activity activity, String title,
+            int totalMinutes, IntCallback callback) {
         Dialog dialog = dialog(activity);
-        LinearLayout content = sheet(activity, "多久以后提醒");
+        LinearLayout content = sheet(activity, title);
 
         LinearLayout pickers = pickerRow(activity);
         NumberPicker hours = numberPicker(activity, 0, 8760,

@@ -209,7 +209,7 @@ public final class AlarmConfig {
                 .ringtoneName(item.optString("ringtoneName", "默认铃声"))
                 .vibrateMode(item.optInt("vibrateMode", 2))
                 .deleteAfterRing(item.optBoolean("deleteAfterRing", true))
-                .snoozeEnabled(item.optBoolean("snoozeEnabled", true))
+                .snoozeEnabled(item.optBoolean("snoozeEnabled", false))
                 .snoozeMinutes(item.optInt("snoozeMinutes", 5))
                 .snoozeCount(item.optInt("snoozeCount", 5))
                 .snoozeTalker(item.optBoolean("snoozeTalker", false))
@@ -295,7 +295,7 @@ public final class AlarmConfig {
         private String ringtoneName = "默认铃声";
         private int vibrateMode = 2;
         private boolean deleteAfterRing = true;
-        private boolean snoozeEnabled = true;
+        private boolean snoozeEnabled;
         private int snoozeMinutes = 5;
         private int snoozeCount = 5;
         private boolean snoozeTalker;

@@ -7,6 +7,7 @@ $visualActivities = @(
     'MainActivity.java',
     'EditProfileActivity.java',
     'EditAlarmActivity.java',
+    'RunBaseActivity.java',
     'RepeatActivity.java',
     'RingtoneActivity.java',
     'VibrationActivity.java',
@@ -57,6 +58,42 @@ foreach ($offset in @(480, 495, 500)) {
     if ($store -notmatch ('defaultRelative\(' + $offset + '\)')) {
         throw "Default offset missing: $offset"
     }
+}
+
+$alarmConfig = Get-Content -Raw -LiteralPath (
+    Join-Path $sourceRoot 'AlarmConfig.java')
+if ($alarmConfig -notmatch 'private boolean snoozeEnabled;' -or
+        $alarmConfig -notmatch 'optBoolean\("snoozeEnabled", false\)') {
+    throw 'New alarms must default to snooze disabled'
+}
+
+$main = Get-Content -Raw -LiteralPath (Join-Path $sourceRoot 'MainActivity.java')
+$shortcut = Get-Content -Raw -LiteralPath (Join-Path $sourceRoot 'ShortcutHelper.java')
+if ($main -notmatch 'createRunIntent' -or $shortcut -notmatch 'createRunIntent') {
+    throw 'In-app execution and desktop shortcuts do not share the run intent'
+}
+if ($main -notmatch 'handleProfileDrop' -or $store -notmatch 'moveProfile') {
+    throw 'Profile drag sorting support is missing'
+}
+if ($main -match '方案顺序已保存') {
+    throw 'Profile sorting still shows a success notification'
+}
+
+$profile = Get-Content -Raw -LiteralPath (Join-Path $sourceRoot 'AlarmProfile.java')
+$timing = Get-Content -Raw -LiteralPath (Join-Path $sourceRoot 'ProfileTiming.java')
+if ($profile -notmatch 'TIMING_SEQUENCE' -or $timing -notmatch 'elapsedAfterRuntimeBaseMinutes') {
+    throw 'Relative sequence timing support is missing'
+}
+
+$runBase = Get-Content -Raw -LiteralPath (Join-Path $sourceRoot 'RunBaseActivity.java')
+$pending = Get-Content -Raw -LiteralPath (
+    Join-Path $sourceRoot 'PendingExecutionStore.java')
+if ($runBase -notmatch '从现在起' -or $runBase -notmatch '指定时间' -or
+        $runBase -notmatch 'createRuntimeRunIntent') {
+    throw 'Execution-time base selection is incomplete'
+}
+if ($pending -notmatch 'runtimeBaseTargetAt') {
+    throw 'Execution-time base is not persisted through accessibility recovery'
 }
 
 Write-Output 'Source regression checks passed'

@@ -28,6 +28,8 @@ import java.util.Locale;
 public final class EditAlarmActivity extends Activity {
     public static final String EXTRA_ALARM_JSON = "alarm_json";
     public static final String EXTRA_IS_NEW = "is_new_alarm";
+    public static final String EXTRA_SEQUENCE_MODE = "sequence_mode";
+    public static final String EXTRA_SEQUENCE_INDEX = "sequence_index";
     private static final int REQUEST_RINGTONE = 51;
     private static final int REQUEST_SHIFT = 52;
     private static final int REQUEST_VOICE = 53;
@@ -36,6 +38,8 @@ public final class EditAlarmActivity extends Activity {
     private AlarmConfig alarm;
     private LinearLayout page;
     private boolean creating;
+    private boolean sequenceMode;
+    private int sequenceIndex;
     private String initialSignature;
 
     @Override
@@ -50,6 +54,9 @@ public final class EditAlarmActivity extends Activity {
             return;
         }
         creating = getIntent().getBooleanExtra(EXTRA_IS_NEW, false);
+        sequenceMode = getIntent().getBooleanExtra(EXTRA_SEQUENCE_MODE, false);
+        sequenceIndex = Math.max(0,
+                getIntent().getIntExtra(EXTRA_SEQUENCE_INDEX, 0));
         initialSignature = alarm.toJsonString();
         render();
     }
@@ -143,6 +150,21 @@ public final class EditAlarmActivity extends Activity {
         TextView title = Ui.text(this, "时间模式", 13, Ui.COLOR_SUBTEXT);
         title.setPadding(Ui.dp(this, 4), Ui.dp(this, 14), 0, Ui.dp(this, 8));
         card.addView(title);
+        if (sequenceMode) {
+            card.addView(Ui.row(this,
+                    sequenceIndex == 0 ? "第一个闹钟时间" : "接在前一个闹钟之后",
+                    sequenceIndex == 0
+                            ? "每次执行方案时选择，不预先保存在方案中"
+                            : "设置与前一个闹钟之间的间隔",
+                    false, null));
+            TextView help = Ui.text(this,
+                    "执行时可以选择“从现在起”或“指定时间”，后续闹钟按已保存的间隔接续。",
+                    12, Ui.COLOR_SUBTEXT);
+            help.setPadding(Ui.dp(this, 4), 0,
+                    Ui.dp(this, 4), Ui.dp(this, 14));
+            card.addView(help);
+            return card;
+        }
         LinearLayout modes = new LinearLayout(this);
         modes.setOrientation(LinearLayout.HORIZONTAL);
         modes.setPadding(0, 0, 0, Ui.dp(this, 14));
@@ -167,7 +189,7 @@ public final class EditAlarmActivity extends Activity {
         card.addView(modes);
         TextView help = Ui.text(this,
                 alarm.timeMode == AlarmConfig.TIME_RELATIVE
-                        ? "点击桌面方案时开始计算；同一方案中的所有相对闹钟使用同一个起始时刻。"
+                        ? "执行方案时开始计算；同一方案中的所有相对闹钟使用同一个当前时间。"
                         : "按指定时分提醒；仅一次时还会使用下面选择的日期。",
                 12, Ui.COLOR_SUBTEXT);
         help.setPadding(Ui.dp(this, 4), 0, Ui.dp(this, 4), Ui.dp(this, 14));
@@ -200,8 +222,15 @@ public final class EditAlarmActivity extends Activity {
             main = alarm.shiftDaysCount + " 天轮班周期";
             sub = "今天是周期第 " + alarm.shiftToday + " 天";
         } else if (alarm.timeMode == AlarmConfig.TIME_RELATIVE) {
-            main = TimeText.durationAfter(alarm.offsetMinutes);
-            sub = "点击桌面方案后开始计算";
+            main = sequenceMode
+                    ? sequenceIndex == 0 ? "执行时选择"
+                            : "间隔 " + TimeText.duration(alarm.offsetMinutes)
+                    : TimeText.durationAfter(alarm.offsetMinutes);
+            sub = sequenceMode
+                    ? sequenceIndex == 0
+                            ? "本方案不保存固定的第一个时间"
+                            : "从前一个闹钟继续计算"
+                    : "执行方案后开始计算";
         } else {
             main = String.format(Locale.CHINA, "%02d:%02d", alarm.hour, alarm.minute);
             sub = alarm.repeatType == AlarmConfig.REPEAT_ONCE
@@ -214,11 +243,18 @@ public final class EditAlarmActivity extends Activity {
         TextView detail = Ui.text(this, sub, 14, Ui.COLOR_SUBTEXT);
         detail.setGravity(Gravity.CENTER);
         card.addView(detail);
+        if (sequenceMode && sequenceIndex == 0) {
+            detail.setPadding(0, 0, 0, Ui.dp(this, 28));
+            return card;
+        }
         Button change = Ui.textButton(this,
                 alarm.repeatType == AlarmConfig.REPEAT_SHIFT_WORKDAY
                         ? "设置周期日时分"
                         : alarm.timeMode == AlarmConfig.TIME_RELATIVE
-                                ? "调整时长" : "设置时间");
+                                ? sequenceMode
+                                        ? "调整间隔"
+                                        : "调整时长"
+                                : "设置时间");
         change.setOnClickListener(view -> {
             if (alarm.repeatType == AlarmConfig.REPEAT_SHIFT_WORKDAY) editShift();
             else if (alarm.timeMode == AlarmConfig.TIME_RELATIVE) editOffset();
@@ -232,7 +268,11 @@ public final class EditAlarmActivity extends Activity {
     }
 
     private void editOffset() {
-        VivoDialogs.showDuration(this, alarm.offsetMinutes, value -> {
+        String title = sequenceMode
+                ? sequenceIndex == 0
+                        ? "第一个闹钟多久以后" : "与前一个闹钟间隔"
+                : "多久以后提醒";
+        VivoDialogs.showDuration(this, title, alarm.offsetMinutes, value -> {
             alarm = alarm.buildUpon().offsetMinutes(value).build();
             render();
         });
@@ -255,6 +295,7 @@ public final class EditAlarmActivity extends Activity {
     private void chooseRepeat() {
         Intent intent = new Intent(this, RepeatActivity.class);
         intent.putExtra(EXTRA_ALARM_JSON, alarm.toJsonString());
+        intent.putExtra(EXTRA_SEQUENCE_MODE, sequenceMode);
         startActivityForResult(intent, REQUEST_REPEAT);
     }
 
@@ -307,6 +348,15 @@ public final class EditAlarmActivity extends Activity {
                 || requestCode == REQUEST_VOICE || requestCode == REQUEST_REPEAT) {
             try {
                 alarm = AlarmConfig.fromJsonString(data.getStringExtra(EXTRA_ALARM_JSON));
+                if (sequenceMode && (alarm.timeMode != AlarmConfig.TIME_RELATIVE
+                        || alarm.repeatType == AlarmConfig.REPEAT_SHIFT_WORKDAY)) {
+                    Toast.makeText(this,
+                            "执行时选择时间＋间隔不能使用轮班制时间",
+                            Toast.LENGTH_LONG).show();
+                    alarm = alarm.buildUpon()
+                            .timeMode(AlarmConfig.TIME_RELATIVE)
+                            .repeatType(AlarmConfig.REPEAT_ONCE).build();
+                }
             } catch (JSONException | NullPointerException exception) {
                 Toast.makeText(this, "二级配置读取失败", Toast.LENGTH_LONG).show();
             }
